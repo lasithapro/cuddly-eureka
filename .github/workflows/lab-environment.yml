@@ -1,0 +1,88 @@
+name: Lab Environment (pfSense + Kali)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Update System
+        run: sudo apt update && sudo apt upgrade -y
+
+      - name: Install Desktop, XRDP & VirtualBox
+        run: |
+          sudo apt install -y xfce4 xfce4-goodies xrdp virtualbox wget unzip curl
+          sudo systemctl enable xrdp
+          sudo systemctl start xrdp
+
+      - name: Configure XRDP Session
+        run: |
+          echo "xfce4-session" > ~/.xsession
+          sudo adduser xrdp ssl-cert
+
+      - name: Set Password
+        run: echo "runner:Kali@123" | sudo chpasswd
+
+      - name: Download pfSense ISO
+        run: |
+          wget -O /home/runner/pfsense.iso.gz \
+            "https://atxfiles.netgate.com/mirror/downloads/pfSense-CE-2.7.2-RELEASE-amd64.iso.gz"
+          gunzip /home/runner/pfsense.iso.gz
+
+      - name: Download Kali Linux ISO
+        run: |
+          wget -O /home/runner/kali.iso \
+            "https://cdimage.kali.org/kali-2024.2/kali-linux-2024.2-installer-amd64.iso"
+
+      - name: Create pfSense VM
+        run: |
+          VBoxManage createvm --name "pfSense" --ostype FreeBSD_64 --register
+          VBoxManage modifyvm "pfSense" --memory 1024 --cpus 1 --vram 16
+          VBoxManage createhd --filename ~/VirtualBox\ VMs/pfSense/pfSense.vdi --size 10240
+          VBoxManage storagectl "pfSense" --name "SATA" --add sata
+          VBoxManage storageattach "pfSense" --storagectl "SATA" --port 0 \
+            --device 0 --type hdd --medium ~/VirtualBox\ VMs/pfSense/pfSense.vdi
+          VBoxManage storageattach "pfSense" --storagectl "SATA" --port 1 \
+            --device 0 --type dvddrive --medium /home/runner/pfsense.iso
+          VBoxManage modifyvm "pfSense" --nic1 nat --nic2 intnet --intnet2 "labnet"
+
+      - name: Create Kali VM
+        run: |
+          VBoxManage createvm --name "Kali" --ostype Debian_64 --register
+          VBoxManage modifyvm "Kali" --memory 2048 --cpus 2 --vram 16
+          VBoxManage createhd --filename ~/VirtualBox\ VMs/Kali/Kali.vdi --size 25600
+          VBoxManage storagectl "Kali" --name "SATA" --add sata
+          VBoxManage storageattach "Kali" --storagectl "SATA" --port 0 \
+            --device 0 --type hdd --medium ~/VirtualBox\ VMs/Kali/Kali.vdi
+          VBoxManage storageattach "Kali" --storagectl "SATA" --port 1 \
+            --device 0 --type dvddrive --medium /home/runner/kali.iso
+          VBoxManage modifyvm "Kali" --nic1 intnet --intnet1 "labnet"
+
+      - name: Download Ngrok
+        run: |
+          wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.zip
+          unzip ngrok-v3-stable-linux-amd64.zip
+
+      - name: Authenticate Ngrok
+        run: ./ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: Create RDP Tunnel
+        run: |
+          ./ngrok tcp 3389 --log=stdout &
+          sleep 15
+
+      - name: Show Connection Info
+        run: |
+          curl -s http://127.0.0.1:4040/api/tunnels
+          echo ""
+          echo "===================================="
+          echo "RDP Username : runner"
+          echo "RDP Password : Kali@123"
+          echo "Both VMs created in VirtualBox"
+          echo "Open VirtualBox from the desktop"
+          echo "===================================="
+
+      - name: Keep Session Alive
+        run: while true; do sleep 300; done
