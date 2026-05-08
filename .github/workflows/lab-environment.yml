@@ -86,16 +86,30 @@ jobs:
 
       - name: Create RDP Tunnel
         run: |
-          ./ngrok tcp 3389 --log=stdout &
+          ./ngrok tcp 3389 --log=stdout >/tmp/ngrok.log 2>&1 &
+          echo $! >/tmp/ngrok.pid
+          sleep 1
+          if ! kill -0 "$(cat /tmp/ngrok.pid)" 2>/dev/null; then
+            echo "Failed to start ngrok tunnel process."
+            cat /tmp/ngrok.log
+            exit 1
+          fi
 
       - name: Show Connection Info
         run: |
+          ready=false
           for i in {1..30}; do
             if curl -sf http://127.0.0.1:4040/api/tunnels >/dev/null; then
+              ready=true
               break
             fi
             sleep 1
           done
+          if [ "${ready}" != "true" ]; then
+            echo "ngrok API did not become ready in time."
+            cat /tmp/ngrok.log
+            exit 1
+          fi
           curl -s http://127.0.0.1:4040/api/tunnels
           echo ""
           echo "===================================="
