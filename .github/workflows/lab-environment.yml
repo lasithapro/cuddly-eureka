@@ -3,6 +3,8 @@ name: Lab Environment (pfSense + Kali)
 on:
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,7 +25,14 @@ jobs:
           sudo adduser xrdp ssl-cert
 
       - name: Set Password
-        run: echo "runner:Kali@123" | sudo chpasswd
+        env:
+          LAB_RDP_PASSWORD: ${{ secrets.LAB_RDP_PASSWORD }}
+        run: |
+          if [ -z "${LAB_RDP_PASSWORD}" ]; then
+            echo "LAB_RDP_PASSWORD secret is required."
+            exit 1
+          fi
+          echo "runner:${LAB_RDP_PASSWORD}" | sudo chpasswd
 
       - name: Download pfSense ISO
         run: |
@@ -79,10 +88,10 @@ jobs:
           echo ""
           echo "===================================="
           echo "RDP Username : runner"
-          echo "RDP Password : Kali@123"
+          echo "RDP Password : configured via LAB_RDP_PASSWORD secret"
           echo "Both VMs created in VirtualBox"
           echo "Open VirtualBox from the desktop"
           echo "===================================="
 
-      - name: Keep Session Alive
+      - name: Keep Session Alive (until job timeout)
         run: while true; do sleep 300; done
